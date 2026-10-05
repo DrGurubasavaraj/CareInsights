@@ -86,6 +86,37 @@ try:
         """
     )
 
+    registry = query_df(
+        """
+        SELECT
+            c.patient_id,
+            c.patient_name,
+            p.age,
+            p.gender,
+            p.city,
+            c.index_discharge_date,
+            c.next_admission_date,
+            c.days_to_readmission,
+            c.index_department,
+            c.index_diagnosis,
+            p.admission_type AS index_admission_type,
+            p.bill_amount AS index_bill_amount,
+            c.readmission_department,
+            c.readmission_diagnosis,
+            c.department_transition,
+            c.diagnosis_transition,
+            c.readmission_type,
+            c.readmission_bill_amount
+        FROM vw_readmission_encounter_comparison c
+        JOIN vw_readmission_patient_registry p
+          ON c.patient_id = p.patient_id
+         AND c.next_admission_id = p.next_admission_id
+        ORDER BY
+            c.days_to_readmission,
+            c.patient_id;
+        """
+    )
+
 except Exception as exc:
     st.error(
         "CareInsights could not load data from PostgreSQL. "
@@ -447,3 +478,263 @@ with dx_transition_col:
             "Same vs different diagnosis compares the recorded index diagnosis "
             "with the diagnosis of the exact subsequent readmission encounter."
         )
+
+
+
+st.divider()
+
+# ---------------------------------------------------------------------------
+# Patient-level readmission registry
+# ---------------------------------------------------------------------------
+
+st.markdown("## Patient-Level Readmission Registry")
+st.caption(
+    "Drill down from the hospital-level KPI to the eligible readmission events "
+    "that make up the numerator. Filters in this section affect the registry only."
+)
+
+if registry.empty:
+    st.info("No eligible patient-level readmission records are available.")
+else:
+    registry = registry.copy()
+
+    registry["days_to_readmission"] = registry["days_to_readmission"].astype(int)
+
+    min_days = int(registry["days_to_readmission"].min())
+    max_days = int(registry["days_to_readmission"].max())
+
+    department_options = sorted(
+        registry["index_department"].dropna().astype(str).unique().tolist()
+    )
+
+    with st.expander("Registry filters", expanded=True):
+        filter_col1, filter_col2, filter_col3 = st.columns([1.2, 1, 1])
+
+        with filter_col1:
+            patient_search = st.text_input(
+                "Patient search",
+                placeholder="Search patient ID or patient name",
+            )
+
+            selected_departments = st.multiselect(
+                "Index department",
+                options=department_options,
+                placeholder="All departments",
+            )
+
+        with filter_col2:
+            department_transition_filter = st.selectbox(
+                "Department transition",
+                options=[
+                    "All",
+                    "Same Department",
+                    "Different Department",
+                ],
+            )
+
+            diagnosis_transition_filter = st.selectbox(
+                "Diagnosis transition",
+                options=[
+                    "All",
+                    "Same Diagnosis",
+                    "Different Diagnosis",
+                ],
+            )
+
+        with filter_col3:
+            days_range = st.slider(
+                "Days to readmission",
+                min_value=min_days,
+                max_value=max_days,
+                value=(min_days, max_days),
+            )
+
+            readmission_type_options = sorted(
+                registry["readmission_type"]
+                .dropna()
+                .astype(str)
+                .unique()
+                .tolist()
+            )
+
+            selected_readmission_types = st.multiselect(
+                "Readmission type",
+                options=readmission_type_options,
+                placeholder="All admission types",
+            )
+
+    filtered_registry = registry.copy()
+
+    if patient_search:
+        search_term = patient_search.strip()
+
+        patient_match = (
+            filtered_registry["patient_name"]
+            .astype(str)
+            .str.contains(search_term, case=False, na=False)
+        )
+
+        id_match = (
+            filtered_registry["patient_id"]
+            .astype(str)
+            .str.contains(search_term, case=False, na=False)
+        )
+
+        filtered_registry = filtered_registry[patient_match | id_match]
+
+    if selected_departments:
+        filtered_registry = filtered_registry[
+            filtered_registry["index_department"].isin(selected_departments)
+        ]
+
+    if department_transition_filter != "All":
+        filtered_registry = filtered_registry[
+            filtered_registry["department_transition"]
+            == department_transition_filter
+        ]
+
+    if diagnosis_transition_filter != "All":
+        filtered_registry = filtered_registry[
+            filtered_registry["diagnosis_transition"]
+            == diagnosis_transition_filter
+        ]
+
+    filtered_registry = filtered_registry[
+        filtered_registry["days_to_readmission"].between(
+            days_range[0],
+            days_range[1],
+        )
+    ]
+
+    if selected_readmission_types:
+        filtered_registry = filtered_registry[
+            filtered_registry["readmission_type"].isin(
+                selected_readmission_types
+            )
+        ]
+
+    registry_metric1, registry_metric2, registry_metric3 = st.columns(3)
+
+    with registry_metric1:
+        st.metric(
+            "Records Shown",
+            f"{len(filtered_registry):,}",
+        )
+
+    with registry_metric2:
+        median_days = (
+            filtered_registry["days_to_readmission"].median()
+            if not filtered_registry.empty
+            else 0
+        )
+        st.metric(
+            "Median Days to Readmission",
+            f"{median_days:.0f}",
+        )
+
+    with registry_metric3:
+        different_department_count = (
+            filtered_registry["department_transition"]
+            .eq("Different Department")
+            .sum()
+            if not filtered_registry.empty
+            else 0
+        )
+        st.metric(
+            "Different-Department Returns",
+            f"{different_department_count:,}",
+        )
+
+    display_registry = filtered_registry[
+        [
+            "patient_id",
+            "patient_name",
+            "age",
+            "gender",
+            "city",
+            "index_discharge_date",
+            "next_admission_date",
+            "days_to_readmission",
+            "index_department",
+            "index_diagnosis",
+            "readmission_department",
+            "readmission_diagnosis",
+            "department_transition",
+            "diagnosis_transition",
+            "index_admission_type",
+            "readmission_type",
+            "index_bill_amount",
+            "readmission_bill_amount",
+        ]
+    ].rename(
+        columns={
+            "patient_id": "Patient ID",
+            "patient_name": "Patient",
+            "age": "Age",
+            "gender": "Gender",
+            "city": "City",
+            "index_discharge_date": "Index Discharge",
+            "next_admission_date": "Readmission Date",
+            "days_to_readmission": "Days to Readmission",
+            "index_department": "Index Department",
+            "index_diagnosis": "Index Diagnosis",
+            "readmission_department": "Readmission Department",
+            "readmission_diagnosis": "Readmission Diagnosis",
+            "department_transition": "Department Transition",
+            "diagnosis_transition": "Diagnosis Transition",
+            "index_admission_type": "Index Admission Type",
+            "readmission_type": "Readmission Type",
+            "index_bill_amount": "Index Bill Amount",
+            "readmission_bill_amount": "Readmission Bill Amount",
+        }
+    )
+
+    st.dataframe(
+        display_registry,
+        use_container_width=True,
+        hide_index=True,
+        height=460,
+        column_config={
+            "Patient ID": st.column_config.NumberColumn(
+                "Patient ID",
+                format="%d",
+            ),
+            "Age": st.column_config.NumberColumn(
+                "Age",
+                format="%d",
+            ),
+            "Index Discharge": st.column_config.DateColumn(
+                "Index Discharge",
+                format="DD MMM YYYY",
+            ),
+            "Readmission Date": st.column_config.DateColumn(
+                "Readmission Date",
+                format="DD MMM YYYY",
+            ),
+            "Days to Readmission": st.column_config.NumberColumn(
+                "Days to Readmission",
+                format="%d",
+            ),
+            "Index Bill Amount": st.column_config.NumberColumn(
+                "Index Bill Amount",
+                format="%.2f",
+            ),
+            "Readmission Bill Amount": st.column_config.NumberColumn(
+                "Readmission Bill Amount",
+                format="%.2f",
+            ),
+        },
+    )
+
+    st.download_button(
+        label="Download filtered registry (CSV)",
+        data=display_registry.to_csv(index=False).encode("utf-8"),
+        file_name="careinsights_readmission_registry.csv",
+        mime="text/csv",
+    )
+
+    st.caption(
+        "Synthetic patient records only. This registry contains the eligible "
+        "30-day readmission events underlying the hospital KPI; it is not a "
+        "production clinical worklist."
+    )
