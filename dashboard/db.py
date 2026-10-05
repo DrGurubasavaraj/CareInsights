@@ -8,6 +8,16 @@ def get_engine():
     """Create and cache the PostgreSQL SQLAlchemy engine."""
     cfg = st.secrets["postgres"]
 
+    # Cloud deployments can use a complete provider connection string.
+    # Local development can continue using the individual fields below.
+    if "url" in cfg:
+        database_url = cfg["url"]
+        return create_engine(
+            database_url,
+            pool_pre_ping=True,
+            pool_recycle=300,
+        )
+
     url = URL.create(
         drivername="postgresql+psycopg2",
         username=cfg["username"],
@@ -15,11 +25,13 @@ def get_engine():
         host=cfg["host"],
         port=int(cfg["port"]),
         database=cfg["database"],
+        query={"sslmode": cfg.get("sslmode", "prefer")},
     )
 
     return create_engine(
         url,
         pool_pre_ping=True,
+        pool_recycle=300,
     )
 
 
