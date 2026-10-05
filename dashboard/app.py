@@ -62,6 +62,30 @@ try:
         """
     )
 
+    department_transition = query_df(
+        """
+        SELECT
+            department_transition,
+            readmission_count,
+            total_readmissions,
+            department_transition_pct
+        FROM vw_readmission_department_transition
+        ORDER BY department_transition_pct;
+        """
+    )
+
+    diagnosis_transition = query_df(
+        """
+        SELECT
+            diagnosis_transition,
+            readmission_count,
+            total_readmissions,
+            diagnosis_transition_pct
+        FROM vw_readmission_diagnosis_transition
+        ORDER BY diagnosis_transition_pct;
+        """
+    )
+
 except Exception as exc:
     st.error(
         "CareInsights could not load data from PostgreSQL. "
@@ -284,4 +308,142 @@ with dept_col:
         st.caption(
             "Department rates are descriptive and benchmarked against the "
             "hospital-level rate. Variance is reported in percentage points."
+        )
+
+
+
+st.divider()
+
+# ---------------------------------------------------------------------------
+# Transition intelligence
+# ---------------------------------------------------------------------------
+
+st.markdown("## Transition Intelligence")
+st.caption(
+    "How eligible 30-day readmissions differed from the index encounter. "
+    "These patterns are descriptive and do not by themselves indicate causation or avoidability."
+)
+
+dept_transition_col, dx_transition_col = st.columns(2, gap="large")
+
+
+with dept_transition_col:
+    st.markdown("### Department Transition")
+
+    if department_transition.empty:
+        st.info("No department transition data are available.")
+    else:
+        dept_transition = department_transition.copy()
+        dept_transition["department_transition_pct"] = dept_transition[
+            "department_transition_pct"
+        ].astype(float)
+
+        dept_transition_fig = go.Figure()
+
+        dept_transition_fig.add_trace(
+            go.Bar(
+                x=dept_transition["department_transition_pct"],
+                y=dept_transition["department_transition"],
+                orientation="h",
+                text=dept_transition["department_transition_pct"].map(
+                    lambda x: f"{x:.2f}%"
+                ),
+                textposition="outside",
+                customdata=dept_transition[
+                    ["readmission_count", "total_readmissions"]
+                ],
+                hovertemplate=(
+                    "<b>%{y}</b><br>"
+                    "Share: %{x:.2f}%<br>"
+                    "Readmissions: %{customdata[0]:,.0f}<br>"
+                    "Total eligible readmissions: %{customdata[1]:,.0f}"
+                    "<extra></extra>"
+                ),
+            )
+        )
+
+        dept_transition_fig.update_layout(
+            height=270,
+            margin=dict(l=10, r=45, t=10, b=10),
+            showlegend=False,
+            xaxis_title="Share of eligible readmissions (%)",
+            yaxis_title=None,
+            xaxis=dict(
+                range=[0, 100],
+                ticksuffix="%",
+                gridcolor="rgba(15, 23, 42, 0.08)",
+            ),
+            yaxis=dict(showgrid=False),
+        )
+
+        st.plotly_chart(
+            dept_transition_fig,
+            use_container_width=True,
+            config={"displayModeBar": False},
+        )
+
+        st.caption(
+            "Same vs different department compares the index-discharge department "
+            "with the department of the exact subsequent readmission encounter."
+        )
+
+
+with dx_transition_col:
+    st.markdown("### Diagnosis Transition")
+
+    if diagnosis_transition.empty:
+        st.info("No diagnosis transition data are available.")
+    else:
+        dx_transition = diagnosis_transition.copy()
+        dx_transition["diagnosis_transition_pct"] = dx_transition[
+            "diagnosis_transition_pct"
+        ].astype(float)
+
+        dx_transition_fig = go.Figure()
+
+        dx_transition_fig.add_trace(
+            go.Bar(
+                x=dx_transition["diagnosis_transition_pct"],
+                y=dx_transition["diagnosis_transition"],
+                orientation="h",
+                text=dx_transition["diagnosis_transition_pct"].map(
+                    lambda x: f"{x:.2f}%"
+                ),
+                textposition="outside",
+                customdata=dx_transition[
+                    ["readmission_count", "total_readmissions"]
+                ],
+                hovertemplate=(
+                    "<b>%{y}</b><br>"
+                    "Share: %{x:.2f}%<br>"
+                    "Readmissions: %{customdata[0]:,.0f}<br>"
+                    "Total eligible readmissions: %{customdata[1]:,.0f}"
+                    "<extra></extra>"
+                ),
+            )
+        )
+
+        dx_transition_fig.update_layout(
+            height=270,
+            margin=dict(l=10, r=45, t=10, b=10),
+            showlegend=False,
+            xaxis_title="Share of eligible readmissions (%)",
+            yaxis_title=None,
+            xaxis=dict(
+                range=[0, 100],
+                ticksuffix="%",
+                gridcolor="rgba(15, 23, 42, 0.08)",
+            ),
+            yaxis=dict(showgrid=False),
+        )
+
+        st.plotly_chart(
+            dx_transition_fig,
+            use_container_width=True,
+            config={"displayModeBar": False},
+        )
+
+        st.caption(
+            "Same vs different diagnosis compares the recorded index diagnosis "
+            "with the diagnosis of the exact subsequent readmission encounter."
         )
