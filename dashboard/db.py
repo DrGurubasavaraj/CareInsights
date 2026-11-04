@@ -3,6 +3,32 @@ import streamlit as st
 from sqlalchemy import URL, create_engine, text
 
 
+def _force_psycopg2(database_url: str) -> str:
+    """Normalize PostgreSQL URLs so SQLAlchemy always uses psycopg2."""
+    if database_url.startswith("postgresql+psycopg://"):
+        return database_url.replace(
+            "postgresql+psycopg://",
+            "postgresql+psycopg2://",
+            1,
+        )
+
+    if database_url.startswith("postgresql://"):
+        return database_url.replace(
+            "postgresql://",
+            "postgresql+psycopg2://",
+            1,
+        )
+
+    if database_url.startswith("postgres://"):
+        return database_url.replace(
+            "postgres://",
+            "postgresql+psycopg2://",
+            1,
+        )
+
+    return database_url
+
+
 @st.cache_resource
 def get_engine():
     """Create and cache the PostgreSQL SQLAlchemy engine."""
@@ -16,10 +42,11 @@ def get_engine():
     }
 
     # Cloud deployments can use a complete provider connection string.
-    # Local development can continue using the individual fields below.
+    # Force psycopg2 so deployment does not depend on psycopg v3.
     if "url" in cfg:
+        database_url = _force_psycopg2(cfg["url"])
         return create_engine(
-            cfg["url"],
+            database_url,
             **engine_kwargs,
         )
 
