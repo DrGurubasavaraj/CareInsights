@@ -8,14 +8,19 @@ def get_engine():
     """Create and cache the PostgreSQL SQLAlchemy engine."""
     cfg = st.secrets["postgres"]
 
+    engine_kwargs = {
+        "pool_pre_ping": True,
+        "pool_recycle": 300,
+        "pool_timeout": 10,
+        "connect_args": {"connect_timeout": 10},
+    }
+
     # Cloud deployments can use a complete provider connection string.
     # Local development can continue using the individual fields below.
     if "url" in cfg:
-        database_url = cfg["url"]
         return create_engine(
-            database_url,
-            pool_pre_ping=True,
-            pool_recycle=300,
+            cfg["url"],
+            **engine_kwargs,
         )
 
     url = URL.create(
@@ -30,8 +35,7 @@ def get_engine():
 
     return create_engine(
         url,
-        pool_pre_ping=True,
-        pool_recycle=300,
+        **engine_kwargs,
     )
 
 
