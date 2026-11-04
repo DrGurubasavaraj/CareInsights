@@ -1,3 +1,4 @@
+import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
@@ -689,41 +690,81 @@ else:
         }
     )
 
-    st.dataframe(
-        display_registry,
-        use_container_width=True,
-        hide_index=True,
-        height=460,
-        column_config={
-            "Patient ID": st.column_config.NumberColumn(
-                "Patient ID",
-                format="%d",
-            ),
-            "Age": st.column_config.NumberColumn(
-                "Age",
-                format="%d",
-            ),
-            "Index Discharge": st.column_config.DateColumn(
-                "Index Discharge",
-                format="DD MMM YYYY",
-            ),
-            "Readmission Date": st.column_config.DateColumn(
-                "Readmission Date",
-                format="DD MMM YYYY",
-            ),
-            "Days to Readmission": st.column_config.NumberColumn(
-                "Days to Readmission",
-                format="%d",
-            ),
-            "Index Bill Amount": st.column_config.NumberColumn(
-                "Index Bill Amount",
-                format="%.2f",
-            ),
-            "Readmission Bill Amount": st.column_config.NumberColumn(
-                "Readmission Bill Amount",
-                format="%.2f",
-            ),
-        },
+    # Use a native HTML table rather than st.dataframe. Community Cloud can
+    # occasionally fail to load Streamlit's dynamically imported DataFrame
+    # JavaScript bundle after a redeploy, while the Python app itself is healthy.
+    registry_table = display_registry.copy()
+
+    for date_column in ["Index Discharge", "Readmission Date"]:
+        registry_table[date_column] = pd.to_datetime(
+            registry_table[date_column],
+            errors="coerce",
+        ).dt.strftime("%d %b %Y")
+
+    for money_column in ["Index Bill Amount", "Readmission Bill Amount"]:
+        registry_table[money_column] = registry_table[money_column].map(
+            lambda value: (
+                f"{float(value):,.2f}"
+                if pd.notna(value)
+                else ""
+            )
+        )
+
+    registry_html = registry_table.to_html(
+        index=False,
+        escape=True,
+        border=0,
+        classes="careinsights-registry-table",
+    )
+
+    st.markdown(
+        """
+        <style>
+        .careinsights-registry-wrap {
+            max-height: 520px;
+            overflow: auto;
+            border: 1px solid rgba(15, 23, 42, 0.14);
+            border-radius: 8px;
+            background: white;
+        }
+
+        .careinsights-registry-table {
+            border-collapse: separate;
+            border-spacing: 0;
+            width: max-content;
+            min-width: 100%;
+            font-size: 0.86rem;
+        }
+
+        .careinsights-registry-table th,
+        .careinsights-registry-table td {
+            padding: 0.58rem 0.7rem;
+            border-bottom: 1px solid rgba(15, 23, 42, 0.08);
+            border-right: 1px solid rgba(15, 23, 42, 0.06);
+            white-space: nowrap;
+            text-align: left;
+        }
+
+        .careinsights-registry-table th {
+            position: sticky;
+            top: 0;
+            z-index: 1;
+            background: #f1f5f9;
+            color: #334155;
+            font-weight: 600;
+        }
+
+        .careinsights-registry-table tr:last-child td {
+            border-bottom: none;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    st.markdown(
+        f'<div class="careinsights-registry-wrap">{registry_html}</div>',
+        unsafe_allow_html=True,
     )
 
     st.download_button(
